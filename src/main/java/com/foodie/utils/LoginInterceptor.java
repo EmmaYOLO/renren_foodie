@@ -1,12 +1,12 @@
 package com.foodie.utils;
 
 import com.foodie.dto.UserDTO;
-import com.foodie.entity.User;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.HandlerInterceptor;
-import org.springframework.web.servlet.ModelAndView;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
 
 /**
  * @author Emma_Lyy
@@ -14,20 +14,22 @@ import javax.servlet.http.HttpServletResponse;
  */
 public class LoginInterceptor implements HandlerInterceptor {
 
-    @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        Object user = request.getSession().getAttribute("user");
-        if(user == null){
-            response.setStatus(401);
-            return false;
-        }
-        UserHolder.saveUser((UserDTO) user);
-        return true;
+    private StringRedisTemplate stringRedisTemplate;
+
+    public LoginInterceptor(StringRedisTemplate stringRedisTemplate) {
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     @Override
-    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
-        //移除用户
-        UserHolder.removeUser();
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        UserDTO userDTO = UserHolder.getUser();
+        if(userDTO == null){
+            response.setStatus(401);
+            return false;
+        }
+
+        return true;
     }
+
+
 }
