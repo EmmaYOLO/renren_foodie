@@ -1,6 +1,7 @@
 package com.foodie.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.foodie.dto.Result;
 import com.foodie.entity.ShopType;
 
 /**
@@ -8,4 +9,5 @@ import com.foodie.entity.ShopType;
  * @create 2022-12-01 0:23
  */
 public interface IShopTypeService extends IService<ShopType> {
+    Result queryList();
 }
