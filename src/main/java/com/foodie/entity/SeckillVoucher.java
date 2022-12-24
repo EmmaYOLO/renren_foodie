@@ -28,7 +28,6 @@ public class SeckillVoucher implements Serializable {
     @TableId(value = "voucher_id", type = IdType.AUTO)
     private Long voucherId;
 
-
     /**
      * 库存
      */
