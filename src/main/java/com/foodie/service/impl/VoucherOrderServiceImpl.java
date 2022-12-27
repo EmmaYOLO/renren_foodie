@@ -8,8 +8,10 @@ import com.foodie.mapper.VoucherOrderMapper;
 import com.foodie.service.ISeckillVoucherService;
 import com.foodie.service.IVoucherOrderService;
 import com.foodie.utils.RedisIdWorker;
+import com.foodie.utils.SimpleRedisLock;
 import com.foodie.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     @Resource
     private ISeckillVoucherService seckillVoucherService;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -56,9 +61,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
 
         Long userId = UserHolder.getUser().getId();
-        synchronized (userId.toString().intern()) {
+
+        SimpleRedisLock redisLock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+        boolean islock = redisLock.tryLock(1200);
+        if (!islock) {
+            return Result.fail("秒杀券每人限购一张！");
+        }
+
+        try {
             IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
             return proxy.createVoucherOrder(voucherId);
+        } finally {
+            redisLock.unlock();
         }
     }
 
@@ -69,7 +83,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //5.1 查询订单
         int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
         //5.2 订单数量大于零，说明已经买过这个秒杀券了
-        if(count > 0){
+        if (count > 0) {
             return Result.fail("秒杀券限购一张！");
         }
 
@@ -82,7 +96,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
 //        seckillVoucher.setStock(stock - 1);
 //        boolean success = seckillVoucherService.updateById(seckillVoucher);
-        if(!success){
+        if (!success) {
             //扣减库存失败
             return Result.fail("库存不足！");
         }
