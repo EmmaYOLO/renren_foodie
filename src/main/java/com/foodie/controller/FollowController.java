@@ -1,7 +1,10 @@
 package com.foodie.controller;
 
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.foodie.dto.Result;
+import com.foodie.service.IFollowService;
+import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
 
 /**
  * @author Emma_Lyy
@@ -10,4 +13,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/follow")
 public class FollowController {
+    @Resource
+    private IFollowService followService;
+
+
+    @PutMapping("/{id}/{isFollow}")
+    private Result follow(@PathVariable("id") Long followUserId, @PathVariable("isFollow") Boolean ifFollow){
+        return followService.follow(followUserId, ifFollow);
+    }
+
+    @GetMapping("/or/not/{id}")
+    private Result isFollow(@PathVariable("id") Long followUserId){
+        return followService.isFollow(followUserId);
+
+    }
+
 }

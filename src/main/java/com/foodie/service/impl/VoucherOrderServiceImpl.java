@@ -94,7 +94,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     log.error("处理订单异常", e);
                     handlePendingList();
                 }
-
             }
         }
         private void handlePendingList(){

@@ -1,8 +1,10 @@
 package com.foodie.controller;
 
+import cn.hutool.core.bean.BeanUtil;
 import com.foodie.dto.LoginFormDTO;
 import com.foodie.dto.Result;
 import com.foodie.dto.UserDTO;
+import com.foodie.entity.User;
 import com.foodie.entity.UserInfo;
 import com.foodie.service.IUserInfoService;
 import com.foodie.service.IUserService;
@@ -77,6 +79,5 @@ public class UserController {
         // 返回
         return Result.ok(info);
     }
-
 
 }
