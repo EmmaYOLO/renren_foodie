@@ -12,17 +12,23 @@ import com.foodie.dto.UserDTO;
 import com.foodie.entity.User;
 import com.foodie.mapper.UserMapper;
 import com.foodie.service.IUserService;
+import com.foodie.utils.RedisConstants;
 import com.foodie.utils.RegexPatterns;
 import com.foodie.utils.RegexUtils;
+import com.foodie.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpSession;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -109,6 +115,68 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         /*
         上面返回的token，前端进行了处理，每次发送axios请求时，请求头都会带上，名为"authorization"
          */
+
+    }
+
+    @Override
+    public Result sign() {
+        //1. 获取当前用户
+        Long userId = UserHolder.getUser().getId();
+        //2. 获取日期
+        LocalDateTime now = LocalDateTime.now();
+
+        //3. 拼接key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+
+        //4. 获取今天是本月的第几天
+        int dayOfMonth = now.getDayOfMonth();
+
+        //5. 写入Redis
+        stringRedisTemplate.opsForValue().setBit(key, dayOfMonth - 1, true);
+
+        return Result.ok();
+    }
+
+    @Override
+    public Result signCount() {
+        //1. 获取当前用户
+        Long userId = UserHolder.getUser().getId();
+        //2. 获取当前日期
+        LocalDateTime now = LocalDateTime.now();
+        //3. 拼接Redis的key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+
+        //4. 获取dayOfMonth
+        int dayOfMonth = now.getDayOfMonth();
+        //5. 从Redis中获取本月截止今天的签到记录，返回的是一个十进制数字 BITFIELD sign:1:202301 GET u6 0
+        List<Long> result = stringRedisTemplate.opsForValue().bitField(
+                key,
+                BitFieldSubCommands.create()
+                        .get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth)).valueAt(0));
+
+        if(result == null || result.isEmpty()){
+            return Result.ok(0);
+        }
+        Long num = result.get(0);
+        if(num == null || num == 0){
+            return Result.ok(0);
+        }
+
+        //6. 签到统计
+        int count = 0;
+        while (true){
+            if((num & 1) == 1){
+                count++;
+            }else{
+                break;
+            }
+            num >>>= 1;
+        }
+
+        return Result.ok(count);
+
 
     }
 
