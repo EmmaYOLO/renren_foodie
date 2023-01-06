@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.util.List;
 
+import static com.foodie.utils.SystemConstants.MAX_PAGE_SIZE;
+
 /**
  * @author Emma_Lyy
  * @create 2022-11-30 21:05
@@ -26,13 +28,14 @@ public class BlogController {
 
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog){
-        // 获取登录用户
+        return blogService.saveBlog(blog);
+/*        // 获取登录用户
         UserDTO user = UserHolder.getUser();
         blog.setUserId(user.getId());
         // 保存探店博文
         blogService.save(blog);
         // 返回id
-        return Result.ok(blog.getId());
+        return Result.ok(blog.getId());*/
     }
 
     @PutMapping("/like/{id}")
@@ -46,7 +49,7 @@ public class BlogController {
         UserDTO user = UserHolder.getUser();
         // 根据用户查询
         Page<Blog> page = blogService.query()
-                .eq("user_id", user.getId()).page(new Page<>(current, SystemConstants.MAX_PAGE_SIZE));
+                .eq("user_id", user.getId()).page(new Page<>(current, MAX_PAGE_SIZE));
         // 获取当前页数据
         List<Blog> records = page.getRecords();
         return Result.ok(records);
@@ -67,6 +70,20 @@ public class BlogController {
         return blogService.queryBlogLikes(id);
     }
 
+    @GetMapping("/of/user")
+    public Result queryBlogByUserId(@RequestParam("id") Long id,
+                                    @RequestParam(value = "current", defaultValue = "1") Integer current){
+
+        Page<Blog> page = blogService.query().eq("user_id", id)
+                .page(new Page<>(current, MAX_PAGE_SIZE));
+        return Result.ok(page.getRecords());
+    }
+
+    @GetMapping("/of/follow")
+    public Result queryBlogOfFollow(@RequestParam("lastId") Long max,
+                                    @RequestParam(value = "offset", defaultValue = "0") Integer offset){
+        return blogService.queryBlogOfFollow(max, offset);
+    }
 
 
 

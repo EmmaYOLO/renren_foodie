@@ -2,6 +2,8 @@ package com.foodie.controller;
 
 import com.foodie.dto.Result;
 import com.foodie.service.IFollowService;
+import com.foodie.utils.UserHolder;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -13,6 +15,9 @@ import javax.annotation.Resource;
 @RestController
 @RequestMapping("/follow")
 public class FollowController {
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
     @Resource
     private IFollowService followService;
 
@@ -27,5 +32,16 @@ public class FollowController {
         return followService.isFollow(followUserId);
 
     }
+
+    @GetMapping("/common/{id}")
+    public Result commonFollow(@PathVariable("id") Long id){
+        return followService.followCommons(id);
+
+
+
+    }
+
+
+
 
 }

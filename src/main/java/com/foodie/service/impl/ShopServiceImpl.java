@@ -5,6 +5,7 @@ import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.foodie.dto.Result;
 import com.foodie.entity.Shop;
@@ -13,14 +14,22 @@ import com.foodie.service.IShopService;
 import com.foodie.utils.CacheClient;
 import com.foodie.utils.RedisConstants;
 import com.foodie.utils.RedisData;
+import com.foodie.utils.SystemConstants;
 import com.sun.org.apache.bcel.internal.generic.RETURN;
+import org.springframework.data.geo.Distance;
+import org.springframework.data.geo.GeoResult;
+import org.springframework.data.geo.GeoResults;
+import org.springframework.data.geo.Point;
+import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 
 import java.time.LocalDateTime;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -214,6 +223,66 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         stringRedisTemplate.delete(CACHE_SHOP_KEY + id);
 
         return Result.ok();
+    }
+
+
+
+    @Override
+    public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
+        //1. 判断是否传入坐标查询
+        if (x == null || y == null) {
+            // 不需要坐标查询，直接查数据库
+            Page<Shop> page = query().eq("type_id", typeId)
+                    .page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE));
+            // 返回数据
+            return Result.ok(page.getRecords());
+        }
+
+        //2. 计算分页数据
+        int from = (current - 1) * SystemConstants.DEFAULT_PAGE_SIZE;
+        int end = current * SystemConstants.DEFAULT_PAGE_SIZE;
+
+        //3. 查询Redis
+        String key = SHOP_GEO_KEY + typeId;
+        //GEOSEARCH key BYLONLAT x y BYRADIUS 5000 WITHDISTANCE
+        GeoResults<RedisGeoCommands.GeoLocation<String>> results = stringRedisTemplate.opsForGeo()
+                .search(key,//代表从这个key里存的geo数据中寻找
+                        GeoReference.fromCoordinate(x, y),//以这个点为中心
+                        new Distance(5000),//寻找距离5000m以内的
+                        RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance()//WITHDISTANCE 页面还要显示店铺距离多远，所以需要Distance数据
+                                .limit(end)
+                );
+
+        //4. 解析出id
+        if (results == null) {
+            return Result.ok(Collections.emptyList());
+        }
+        List<GeoResult<RedisGeoCommands.GeoLocation<String>>> list = results.getContent();
+        if (list.size() <= from) {
+            //没有下一页了，结束
+            return Result.ok(Collections.emptyList());
+        }
+        //4.1 截取 from - end的部分
+        ArrayList<Long> ids = new ArrayList<>(list.size());
+        Map<String, Distance> distanceMap = new HashMap<>(list.size());
+        list.stream().skip(from).forEach(result -> {
+            //4.2 获取店铺id
+            String shopIdStr = result.getContent().getName();
+            ids.add(Long.valueOf(shopIdStr));//这里把5公里以内的shopId都收集起来了
+            //4.3 获取距离
+            Distance distance = result.getDistance();
+            distanceMap.put(shopIdStr, distance);
+        });
+        //5. 根据id查询Shop
+        String idStr = StrUtil.join(",", ids);
+        List<Shop> shops = query().in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list();
+        for (Shop shop : shops) {
+            shop.setDistance(distanceMap.get(shop.getId().toString()).getValue());
+        }
+
+        //6. 返回
+        //最终要的是，加上了distance数据的shops集合
+        return Result.ok(shops);
     }
 
     public void saveShop2Redis(Long id, Long expireSeconds) throws InterruptedException {

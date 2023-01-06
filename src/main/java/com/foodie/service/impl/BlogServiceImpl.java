@@ -2,21 +2,27 @@ package com.foodie.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.foodie.dto.Result;
+import com.foodie.dto.ScrollResult;
 import com.foodie.dto.UserDTO;
 import com.foodie.entity.Blog;
+import com.foodie.entity.Follow;
 import com.foodie.entity.User;
 import com.foodie.mapper.BlogMapper;
 import com.foodie.service.IBlogService;
+import com.foodie.service.IFollowService;
 import com.foodie.service.IUserService;
 import com.foodie.utils.SystemConstants;
 import com.foodie.utils.UserHolder;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -36,6 +42,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Resource
     private IUserService userService;
+
+    @Resource
+    private IFollowService followService;
 
 
     @Override
@@ -131,6 +140,90 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
         //4. 返回UserDTO
         return Result.ok(userDTOS);
+    }
+
+    @Override
+    public Result queryBlogOfFollow(Long max, Integer offset) {
+        //1. 查当前用户的收件箱
+        Long userId = UserHolder.getUser().getId();
+        String key = FEED_KEY + userId;
+
+        //2. 查出收件箱里的blogId ZREVRANGEBYSCORE key max min LIMIT offset count
+        Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
+                .reverseRangeByScoreWithScores(key, 0, max, offset, 3);
+
+        //3. 非空判断
+        if(typedTuples == null || typedTuples.isEmpty()){
+            return Result.ok();
+        }
+
+        //4. 解析数据：blogId、minTime（时间戳）、offset
+        List<String> blogIds = new ArrayList<>(typedTuples.size());
+        long minTime = 0;
+
+        int os = 1;
+        for (ZSetOperations.TypedTuple<String> tuple : typedTuples) {
+            // 4.1 获取id
+            blogIds.add(tuple.getValue());
+            // 4.2 获取分数（时间戳）minTime
+            long time = tuple.getScore().longValue();
+            if(minTime == time){
+                os++;
+            }else{
+                minTime = time;
+                os = 1;
+            }
+        }
+
+        //5. 根据blogId查blog
+//        List<Blog> blogs = listByIds(blogIds);//这样查不行，因为blogIds是有序的，这样在数据库查，用的是in，会变成无序的
+        String idStr = StrUtil.join(",", blogIds);
+        List<Blog> blogs = query().in("id", blogIds)
+                .last("ORDER BY FIELD ( id, " + idStr + ")").list();
+
+        for (Blog blog : blogs) {
+            //5.1 查询blog有关的用户
+            queryBlogUser(blog);
+            //5.2 查询blog是否被点赞
+            isBlogLiked(blog);
+        }
+
+
+        //6. 封装并返回
+        ScrollResult scrollResult = new ScrollResult();
+        scrollResult.setList(blogs);
+        scrollResult.setOffset(os);
+        scrollResult.setMinTime(minTime);
+
+        return Result.ok(scrollResult);
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        // 1. 获取登录用户
+        UserDTO user = UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 2. 保存探店博文
+        boolean isSuccess = save(blog);
+        if(!isSuccess){
+            return Result.fail("新增笔记失败");
+        }
+        // 3. 查询笔记作者的粉丝id select user_id from tb_follow where follow_user_id = ?
+        List<Follow> follows = followService.list(new QueryWrapper<Follow>()
+                .eq("follow_user_id", user.getId()));
+        // 4. 给所有粉丝feed
+        for (Follow follow : follows) {
+            //4.1 获取粉丝id
+            Long userId = follow.getUserId();
+            //4.2 推送
+            String key = FEED_KEY + userId;
+            stringRedisTemplate.opsForZSet()
+                    .add(key, String.valueOf(blog.getId()),
+                            System.currentTimeMillis());
+        }
+
+        // 返回id
+        return Result.ok(blog.getId());
     }
 
     private void queryBlogUser(Blog blog) {

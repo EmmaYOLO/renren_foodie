@@ -80,4 +80,17 @@ public class UserController {
         return Result.ok(info);
     }
 
+    @GetMapping("/{id}")
+    public Result queryUserById(@PathVariable("id") Long id){
+
+        User user = userService.getById(id);
+        if(user == null){
+            return Result.ok();
+        }
+
+        UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+        return Result.ok(userDTO);
+
+    }
+
 }
